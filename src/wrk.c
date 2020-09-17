@@ -15,6 +15,7 @@ static struct config {
     bool     latency;
     char    *host;
     char    *script;
+    char    *record;
     SSL_CTX *ctx;
 } cfg;
 
@@ -35,6 +36,8 @@ static struct http_parser_settings parser_settings = {
     .on_message_complete = response_complete
 };
 
+static FILE *record_file = NULL;
+
 static volatile sig_atomic_t stop = 0;
 
 static void handler(int sig) {
@@ -49,6 +52,7 @@ static void usage() {
            "    -t, --threads     <N>  Number of threads to use   \n"
            "                                                      \n"
            "    -s, --script      <S>  Load Lua script file       \n"
+           "        --record      <R>  Log to record every request\n"
            "    -H, --header      <H>  Add header to request      \n"
            "        --latency          Print latency statistics   \n"
            "        --timeout     <T>  Socket/request timeout     \n"
@@ -65,6 +69,10 @@ int main(int argc, char **argv) {
     if (parse_args(&cfg, &url, &parts, headers, argc, argv)) {
         usage();
         exit(1);
+    }
+
+    if (cfg.record) {
+        record_file = fopen(cfg.record, "w");
     }
 
     char *schema  = copy_url_part(url, &parts, UF_SCHEMA);
@@ -194,6 +202,10 @@ int main(int argc, char **argv) {
         script_summary(L, runtime_us, complete, bytes);
         script_errors(L, &errors);
         script_done(L, statistics.latency, statistics.requests);
+    }
+
+    if (record_file != NULL) {
+        fclose(record_file);
     }
 
     return 0;
@@ -341,6 +353,9 @@ static int response_complete(http_parser *parser) {
     }
 
     if (--c->pending == 0) {
+        if (record_file != NULL) {
+            fprintf(record_file, "%llu %llu\n", c->start, now);
+        }
         if (!stats_record(statistics.latency, now - c->start)) {
             thread->errors.timeout++;
         }
@@ -472,6 +487,7 @@ static struct option longopts[] = {
     { "threads",     required_argument, NULL, 't' },
     { "script",      required_argument, NULL, 's' },
     { "header",      required_argument, NULL, 'H' },
+    { "record",      required_argument, NULL, 'R' },
     { "latency",     no_argument,       NULL, 'L' },
     { "timeout",     required_argument, NULL, 'T' },
     { "help",        no_argument,       NULL, 'h' },
@@ -503,6 +519,8 @@ static int parse_args(struct config *cfg, char **url, struct http_parser_url *pa
             case 's':
                 cfg->script = optarg;
                 break;
+            case 'R':
+                cfg->record = optarg;
             case 'H':
                 *header++ = optarg;
                 break;
