@@ -354,7 +354,7 @@ static int response_complete(http_parser *parser) {
 
     if (--c->pending == 0) {
         if (record_file != NULL) {
-            fprintf(record_file, "%llu %llu\n", c->start, now);
+            fprintf(record_file, "%"PRIu64" %"PRIu64"\n", c->start, now);
         }
         if (!stats_record(statistics.latency, now - c->start)) {
             thread->errors.timeout++;
